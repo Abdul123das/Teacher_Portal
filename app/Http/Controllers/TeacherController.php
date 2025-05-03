@@ -32,7 +32,7 @@ class TeacherController extends Controller
         $recent_activities = array();
         $teacher_count = $this->commonRepo->teacher_count();
         $student_count = $this->commonRepo->student_count();
-        return view('dashboard', compact('recent_activities','teacher_count','student_count'));
+        return view('dashboard', compact('recent_activities', 'teacher_count', 'student_count'));
     }
 
     public function create()
@@ -99,53 +99,91 @@ class TeacherController extends Controller
     }
 
     public function update(Request $request, Teacher $teacher)
-{
-    // Validate input (Fixed unique email validation)
-    $request->validate([
-        'name' => 'required',
-        'email' => 'required',
-        'phone' => 'required',
-        'address' => 'required',
-        'date_of_birth' => 'required|date',
-        'gender' => 'required',
-        'parent_name' => 'required',
-        'parent_contact' => 'required',
-        'detail' => 'nullable',
-        'remarks' => 'nullable',
-        'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048' // Validate image file
-    ]);
+    {
+        // Validate input (Fixed unique email validation)
+        $request->validate([
+            'name' => 'required',
+            'email' => 'required',
+            'phone' => 'required',
+            'address' => 'required',
+            'date_of_birth' => 'required|date',
+            'gender' => 'required',
+            'parent_name' => 'required',
+            'parent_contact' => 'required',
+            'detail' => 'nullable',
+            'remarks' => 'nullable',
+            'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048' // Validate image file
+        ]);
 
-    // Handle profile picture upload
-    if ($request->hasFile('profile_picture')) {
-        $file = $request->file('profile_picture');
-        $filename = time() . '.' . $file->getClientOriginalExtension();
-        $file->move(public_path('uploads/teachers'), $filename);
+        // Handle profile picture upload
+        if ($request->hasFile('profile_picture')) {
+            $file = $request->file('profile_picture');
+            $filename = time() . '.' . $file->getClientOriginalExtension();
+            $file->move(public_path('uploads/teachers'), $filename);
 
-        // Delete old profile picture if exists
-        if (!empty($teacher->profile_picture) && file_exists(public_path('uploads/teachers/' . $teacher->profile_picture))) {
-            unlink(public_path('uploads/teachers/' . $teacher->profile_picture));
+            // Delete old profile picture if exists
+            if (!empty($teacher->profile_picture) && file_exists(public_path('uploads/teachers/' . $teacher->profile_picture))) {
+                unlink(public_path('uploads/teachers/' . $teacher->profile_picture));
+            }
+
+            // Assign new profile picture filename
+            $teacher->profile_picture = $filename;
         }
 
-        // Assign new profile picture filename
-        $teacher->profile_picture = $filename;
+        // Update teacher record (excluding profile picture)
+        $teacher->update($request->except(['profile_picture']));
+
+        // Save profile picture separately (if updated)
+        if ($request->hasFile('profile_picture')) {
+            $teacher->save();
+        }
+
+        return redirect()->route('teachers.list')->with('success', 'Teacher updated successfully');
     }
 
-    // Update teacher record (excluding profile picture)
-    $teacher->update($request->except(['profile_picture']));
-
-    // Save profile picture separately (if updated)
-    if ($request->hasFile('profile_picture')) {
-        $teacher->save();
+    public function destroy($teacher_id)
+    {
+        $teacher = $this->teacherRepo->findById($teacher_id);
+        $teacher->delete();
+        return redirect()->route('teachers.list')->with('success', 'Teacher deleted successfully');
     }
 
-    return redirect()->route('teachers.list')->with('success', 'Teacher updated successfully');
-}
+    public function sendmail__()
+    {
+        dd('test');
+        return view('teachers.sendmail');
+    }
+    public function sendmail()
+    {
+        return view('teachers.sendmail');
+    }
 
-public function destroy($teacher_id)
-{
-    $teacher = $this->teacherRepo->findById($teacher_id);
-    $teacher->delete();
-    return redirect()->route('teachers.list')->with('success', 'Teacher deleted successfully');
-}
+    public function sendmailSubmit(Request $request)
+    {
+        $validated = $request->validate([
+            'recipient' => 'required|email',
+            'subject' => 'required|string|max:255',
+            'message' => 'required|string',
+            'attachment' => 'nullable|file|max:10240', // Max 10MB
+        ]);
 
+        // Prepare email data
+        $data = [
+            'name' => 'Teacher', // Replace with dynamic name if needed
+            'subject' => $validated['subject'],
+            'message' => $validated['message'],
+        ];
+
+        // Add attachment if provided
+        if ($request->hasFile('attachment') && $request->file('attachment')->isValid()) {
+            $data['attachment'] = $request->file('attachment');
+        }
+
+        try {
+            Mail::to($validated['recipient'])->send(new MyTestEmail($data));
+            return redirect()->route('teachers.sendmail')->with('success', 'Email sent successfully!');
+        } catch (\Exception $e) {
+            return redirect()->route('teachers.sendmail')->with('error', 'Failed to send email: ' . $e->getMessage());
+        }
+    }
 }
